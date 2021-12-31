@@ -17,7 +17,7 @@ parser.add_argument('--N',
 parser.add_argument('--b',
                     help='batch size',
                     type=int,
-                    default=10)
+                    default=1)
 parser.add_argument('--seed',
                     help='random seed',
                     type=int,
@@ -36,13 +36,13 @@ def run_episode(env, agent ,reward_to_go =False ,baseline=0., test_run=False):
     state = env.reset()
     rewards = []
     terminal = False
-    episode_state = 0
+    episode_steps = 0
     # dW = np.zeros_like(agent.W)
     # db = np.zeros_like(agent.b)
     dw_actions, db_actions = [],[]
     
     while not terminal:
-        episode_state += 1
+        episode_steps += 1
         action = agent.get_action(state)
         state, reward, terminal, _ = env.step(action)
         rewards.append(reward)
@@ -54,18 +54,26 @@ def run_episode(env, agent ,reward_to_go =False ,baseline=0., test_run=False):
     if(test_run):
         return None, None, sum(rewards)
 
-    discount_factors = gamma ** np.array(range(1,episode_state + 1))
+    discount_factors = gamma ** np.array(range(1,episode_steps + 1))
+
+    if(baseline):
+        dw_baseline = np.multiply(np.square(dw_actions), np.array(rewards), axis=0).mean() / np.square(dw_actions).mean()
+        db_baseline = np.multiply(np.square(db_actions), np.array(rewards)).mean() / np.square(db_actions).mean()
+    else:
+        dw_baseline = 0.0
+        db_baseline = 0.0
+    
     if(reward_to_go):
-        for step in range(episode_state):
-            cummulated_reward_to_go =  np.array(rewards[step:]).T @ discount_factors[:episode_state - step]
-            dw_actions[step] *= cummulated_reward_to_go
-            db_actions[step] *= cummulated_reward_to_go
-        dW = np.sum(np.array(dw_actions).reshape(episode_state, *agent.W.shape), axis=0)
-        db = np.sum(np.array(db_actions).reshape(episode_state, *agent.b.shape), axis=0)
+        for step in range(episode_steps):
+            cummulated_reward_to_go =  np.array(rewards[step:]).T @ discount_factors[:episode_steps - step]
+            dw_actions[step] *= (cummulated_reward_to_go - dw_baseline)
+            db_actions[step] *= (cummulated_reward_to_go - db_baseline)
+        dW = np.sum(np.array(dw_actions).reshape(episode_steps, *agent.W.shape), axis=0)
+        db = np.sum(np.array(db_actions).reshape(episode_steps, *agent.b.shape), axis=0)
     else:
         discounted_cummulated_reward = discount_factors.T @ np.array(rewards)
-        dW = np.sum(np.array(dw_actions).reshape(episode_state, *agent.W.shape), axis=0) * discounted_cummulated_reward
-        db = np.sum(np.array(db_actions).reshape(episode_state, *agent.b.shape), axis=0) * discounted_cummulated_reward
+        dW = np.sum(np.array(dw_actions).reshape(episode_steps, *agent.W.shape), axis=0) * (discounted_cummulated_reward - dw_baseline)
+        db = np.sum(np.array(db_actions).reshape(episode_steps, *agent.b.shape), axis=0) * (discounted_cummulated_reward - db_baseline)
 
     return dW , db , sum(rewards)
 
@@ -78,7 +86,7 @@ def train(env, agent,args):
         rewards.append(0)
         for j in range(args.b):
             #TODO fill in
-            episode_dW, episode_db, episode_rewards = run_episode(env,agent,reward_to_go=True)
+            episode_dW, episode_db, episode_rewards = run_episode(env,agent,reward_to_go=True, baseline=1)
             dW += episode_dW / float(args.b)
             db += episode_db / float(args.b)
             rewards[i] += episode_rewards / float(args.b)
@@ -95,7 +103,7 @@ def test(env, agent):
     print('_________________________')
     print('Running 1000 test episodes....')
     for i in range(1000):
-        _,_,r = run_episode(env,agent)
+        _,_,r = run_episode(env,agent, test_run=True)
         rewards.append(r)
     rewards = np.array(rewards)
     rewards_to_plot = np.array([rewards[i - 200:i].mean() for i in range(200,1000)])
