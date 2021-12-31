@@ -9,15 +9,15 @@ parser = argparse.ArgumentParser('')
 parser.add_argument('--lr',
                     help='learning rate',
                     type=float,
-                    default=.1)
+                    default=.0001)
 parser.add_argument('--N',
                     help='Number of updates',
                     type=int,
-                    default=2000)
+                    default=4000)
 parser.add_argument('--b',
                     help='batch size',
                     type=int,
-                    default=1)
+                    default=10)
 parser.add_argument('--seed',
                     help='random seed',
                     type=int,
@@ -26,23 +26,48 @@ parser.add_argument('--RTG',help='reward to go', dest='RTG', action='store_true'
 parser.add_argument('--baseline',help='use baseline', dest='baseline', action='store_true')
 
 
-
 args = parser.parse_args()
 np.random.seed(args.seed)
-
+gamma = 0.99
 env = gym.make('CartPole-v1')
 
 print('Enviourment: CartPole-v1 \nNumber of actions: ' ,env.action_space.n,'\nDimension of state space: ',np.prod(env.observation_space.shape))
-def run_episode(env, agent ,reward_to_go =False ,baseline=0.):
+def run_episode(env, agent ,reward_to_go =False ,baseline=0., test_run=False):
     state = env.reset()
     rewards = []
     terminal = False
+    episode_state = 0
+    # dW = np.zeros_like(agent.W)
+    # db = np.zeros_like(agent.b)
+    dw_actions, db_actions = [],[]
+    
     while not terminal:
+        episode_state += 1
         action = agent.get_action(state)
         state, reward, terminal, _ = env.step(action)
         rewards.append(reward)
         #TODO fill in
-    return dW, db, sum(rewards)
+        dw_action, db_action = agent.grad_log_prob(state,action)
+        dw_actions.append(dw_action)
+        db_actions.append(db_action)
+
+    if(test_run):
+        return None, None, sum(rewards)
+
+    discount_factors = gamma ** np.array(range(1,episode_state + 1))
+    if(reward_to_go):
+        for step in range(episode_state):
+            cummulated_reward_to_go =  np.array(rewards[step:]).T @ discount_factors[:episode_state - step]
+            dw_actions[step] *= cummulated_reward_to_go
+            db_actions[step] *= cummulated_reward_to_go
+        dW = np.sum(np.array(dw_actions).reshape(episode_state, *agent.W.shape), axis=0)
+        db = np.sum(np.array(db_actions).reshape(episode_state, *agent.b.shape), axis=0)
+    else:
+        discounted_cummulated_reward = discount_factors.T @ np.array(rewards)
+        dW = np.sum(np.array(dw_actions).reshape(episode_state, *agent.W.shape), axis=0) * discounted_cummulated_reward
+        db = np.sum(np.array(db_actions).reshape(episode_state, *agent.b.shape), axis=0) * discounted_cummulated_reward
+
+    return dW , db , sum(rewards)
 
 
 def train(env, agent,args):
@@ -50,9 +75,14 @@ def train(env, agent,args):
     for i in range(args.N):
         dW = np.zeros_like(agent.W)
         db = np.zeros_like(agent.b)
+        rewards.append(0)
         for j in range(args.b):
             #TODO fill in
-
+            episode_dW, episode_db, episode_rewards = run_episode(env,agent,reward_to_go=True)
+            dW += episode_dW / float(args.b)
+            db += episode_db / float(args.b)
+            rewards[i] += episode_rewards / float(args.b)
+        agent.update_weights(dW, db)
         if i%100 == 25:
             temp = np.array(rewards[i - 25:i])
             dateTimeObj = datetime.now()
@@ -63,18 +93,20 @@ def train(env, agent,args):
 def test(env, agent):
     rewards = []
     print('_________________________')
-    print('Running 500 test episodes....')
-    for i in range(500):
-        _,_,r,counter = run_episode(env,agent)
+    print('Running 1000 test episodes....')
+    for i in range(1000):
+        _,_,r = run_episode(env,agent)
         rewards.append(r)
     rewards = np.array(rewards)
-    print('Test reward {:.1f}{}{:.1f}'.format(np.mean(rewards),u"\u00B1",np.std(rewards)/np.sqrt(500.)))
-    return agent, rewards
+    rewards_to_plot = np.array([rewards[i - 200:i].mean() for i in range(200,1000)])
+    print('Test reward {:.1f}{}{:.1f}'.format(np.mean(rewards),u"\u00B1",np.std(rewards)/np.sqrt(1000.)))
+    return agent, rewards_to_plot
+    # return agent, rewards
 
 
-agent = PolicyGradientAgent(env)
+agent = PolicyGradientAgent(env, lr=args.lr)
 agent, rewards = train(env,agent,args)
 print('Average training rewards: ',np.mean(np.array(rewards)))
 test(env,agent)
-plt.plot(np.cumsum(rewards))
+plt.plot(rewards)
 plt.show()
