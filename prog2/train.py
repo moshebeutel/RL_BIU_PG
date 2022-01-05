@@ -33,7 +33,7 @@ gamma = 1.0
 env = gym.make('CartPole-v1')
 
 print('Enviourment: CartPole-v1 \nNumber of actions: ' ,env.action_space.n,'\nDimension of state space: ',np.prod(env.observation_space.shape))
-def run_episode(env, agent ,reward_to_go =False ,baseline=0, test_run=False):
+def run_episode(env, agent ,reward_to_go =False ,baseline=0, test_run=False, simple_baseline = 0):
     state = env.reset()
     rewards = []
     terminal = False
@@ -84,22 +84,25 @@ def run_episode(env, agent ,reward_to_go =False ,baseline=0, test_run=False):
     else:
         discounted_cummulated_reward = discount_factors.T @ np.array(rewards)
         discounted_cummulated_reward_w =  np.ones_like(dw_baseline) * discounted_cummulated_reward
-        dW = np.sum(np.array(dw_actions).reshape(episode_steps, *agent.W.shape), axis=0) * (discounted_cummulated_reward_w - dw_baseline)
+        dW = np.sum(np.array(dw_actions).reshape(episode_steps, *agent.W.shape), axis=0) * (discounted_cummulated_reward_w - simple_baseline)
         discounted_cummulated_reward_b =  np.ones_like(db_baseline) * discounted_cummulated_reward
-        db = np.sum(np.array(db_actions).reshape(episode_steps, *agent.b.shape), axis=0) * (discounted_cummulated_reward_b - db_baseline)
+        db = np.sum(np.array(db_actions).reshape(episode_steps, *agent.b.shape), axis=0) * (discounted_cummulated_reward_b - simple_baseline)
     assert not (np.isnan(dW).any() or np.isnan(db).any())  
     return dW , db , sum(rewards)
 
 
-def train(env, agent,N, b, rtg, baseline):
+def train(env, agent,N, b, rtg, baseline,use_simple_baseline):
     rewards = []
     for i in range(N // b):
         dW = np.zeros_like(agent.W)
         db = np.zeros_like(agent.b)
         rewards.append(0)
+        simple_baseline = 0
+        if not baseline and use_simple_baseline and i > 9:
+            simple_baseline = np.mean(rewards[i-10:i])
         for j in range(b):
             #TODO fill in
-            episode_dW, episode_db, episode_rewards = run_episode(env,agent,reward_to_go=rtg, baseline=baseline)
+            episode_dW, episode_db, episode_rewards = run_episode(env,agent,reward_to_go=rtg, baseline=baseline, simple_baseline=simple_baseline)
             dW += episode_dW / float(b)
             db += episode_db / float(b)
             rewards[i] += episode_rewards / float(b)
@@ -121,21 +124,22 @@ def test(env, agent):
     print('Test reward {:.1f}{}{:.1f}'.format(np.mean(rewards),u"\u00B1",np.std(rewards)/np.sqrt(500.)))
     return agent, rewards
 
-for b in [1]:
+for b in [1, 5]:
     for rtg in [False, True]:
-        for baseline in [0,1]:
-            if not baseline or b > 1:
-                for lr in [0.0001]:
-                    agent = PolicyGradientAgent(env, lr=lr)
-                    agent, rewards = train(env,agent,args.N,b,rtg,baseline)
-                    print('Average training rewards: ',np.mean(rewards))
-                    _,test_rewards = test(env,agent)
-                    smoothed_train_rewards = np.array([np.mean(rewards[i - 20:i])for i in range(20,len(rewards))])
-                    str = f'learning rate {lr} batch size {b} baseline {baseline} reward_to_go {rtg} '
-                    plt.plot(smoothed_train_rewards)
-                    plt.savefig(str + f'avg train reward  {np.mean(rewards)}' +  '.png')
-                    plt.clf()
-                    plt.plot(test_rewards)
-                    plt.savefig(str + f'avg test reward  {np.mean(test_rewards)}' +  '.png')
-                    plt.clf()
+        for baseline in [0, 1]:
+            for use_simple_baseline in [False, True]:
+                if not baseline or b > 1:
+                    for lr in [0.0001, 0.001, 0.01]:
+                        agent = PolicyGradientAgent(env, lr=lr)
+                        agent, rewards = train(env,agent,args.N,b,rtg,baseline, use_simple_baseline)
+                        print('Average training rewards: ',np.mean(rewards))
+                        _,test_rewards = test(env,agent)
+                        smoothed_train_rewards = np.array([np.mean(rewards[i - 20:i])for i in range(20,len(rewards))])
+                        str = f'learning rate {lr} batch size {b} baseline {baseline} reward_to_go {rtg} '
+                        plt.plot(smoothed_train_rewards)
+                        plt.savefig(str + f'avg train reward  {np.mean(rewards)}' +  '.png')
+                        plt.clf()
+                        plt.plot(test_rewards)
+                        plt.savefig(str + f'avg test reward  {np.mean(test_rewards)}' +  '.png')
+                        plt.clf()
 
