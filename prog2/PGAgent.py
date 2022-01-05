@@ -53,7 +53,8 @@ class PolicyGradientAgent(object):
         :return: dlogP(a|s)/dW, dlogP(a|s)/db
         '''
         # TODO
-        probs = self.last_probs.reshape(-1,1)   # shape (num_actions,1) (2,1)
+        # probs = self.last_probs.reshape(-1,1)   # shape (num_actions,1) (2,1)
+        probs = self.action_probability(state).reshape(-1,1)
         dsoftmax = (np.diagflat(probs) - np.dot(probs, probs.T))[action, :]  
         assert probs[action,0] > eps
         dlogp_dz = (dsoftmax / probs[action,0]).reshape(1,-1)
@@ -75,8 +76,8 @@ class PolicyGradientAgent(object):
         :param db: gradients w.r.t b
         '''
         assert not (np.isnan(dW).any() or np.isnan(db).any())
-        self.W -= self.lr * dW
-        self.b -= self.lr * db
+        self.W += self.lr * dW
+        self.b += self.lr * db
         assert not (np.isnan(self.W).any() or np.isnan(self.b).any())
         # print(f'update_weights dW = {dW} db = {db} self.lr * dW {self.lr * dW} self.lr * db {self.lr * db}')
 

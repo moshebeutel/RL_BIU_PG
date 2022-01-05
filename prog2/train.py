@@ -45,12 +45,13 @@ def run_episode(env, agent ,reward_to_go =False ,baseline=0, test_run=False):
         #     env.render()
         episode_steps += 1
         action = agent.get_action(state)
-        state, reward, terminal, _ = env.step(action)
-        rewards.append(reward)
         if not test_run:
             dw_action, db_action = agent.grad_log_prob(state,action)
             dw_actions.append(dw_action)
             db_actions.append(db_action)
+        state, reward, terminal, _ = env.step(action)
+        rewards.append(reward)
+
 
     if(test_run):
         return None, None, sum(rewards)
@@ -120,11 +121,11 @@ def test(env, agent):
     print('Test reward {:.1f}{}{:.1f}'.format(np.mean(rewards),u"\u00B1",np.std(rewards)/np.sqrt(500.)))
     return agent, rewards
 
-for b in [1, 5, 10]:
+for b in [1]:
     for rtg in [False, True]:
         for baseline in [0,1]:
             if not baseline or b > 1:
-                for lr in [0.0001,0.001]:
+                for lr in [0.0001]:
                     agent = PolicyGradientAgent(env, lr=lr)
                     agent, rewards = train(env,agent,args.N,b,rtg,baseline)
                     print('Average training rewards: ',np.mean(rewards))
